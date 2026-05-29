@@ -232,6 +232,36 @@ PATH 등록 필요
 pip install -r requirements.txt
 ```
 
+# 🔥 CUDA 환경에서 PyTorch 재설치 (GPU 가속 필수)
+
+Faster-Whisper 및 AI 연산 속도를 제대로 활용하려면 CUDA가 활성화된 PyTorch 환경을 사용하는 것을 권장합니다.
+
+먼저 기존 torch를 제거합니다.
+
+```bash id="v8m31m"
+pip uninstall torch torchvision torchaudio -y
+```
+
+---
+
+## CUDA 12.1 환경 (권장)
+
+최신 NVIDIA 드라이버 사용 시 추천
+
+```bash id="p9m8qb"
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+---
+
+## CUDA 11.8 환경
+
+구형 환경 또는 호환성 우선 시 사용
+
+```bash id="fsc69q"
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
 ---
 
 # 📚 주요 의존성
@@ -432,3 +462,5 @@ AI 행동 지침
 NAVER 및 CHZZK와 제휴 관계가 없으며, 댓글 내용·저작권·플랫폼 정책 위반 등에 대한 책임은 사용자 본인에게 있습니다.
 
 ---
+
+
