@@ -5,6 +5,7 @@ import warnings
 import subprocess
 import re
 import time
+import glob
 from datetime import datetime, timedelta
 from sympy import content
 from yt_dlp import YoutubeDL
@@ -189,48 +190,83 @@ def transcribe_chzzk_audio(audio_path, target_path, model_size="base"):
         with open(target_path, "r", encoding="utf-8") as f:
             return f.read()
 
-    print(f"\n🎙️ 2단계: Faster-Whisper AI 엔진 구동 ({model_size}) - 전체 대본 추출 시작...")
+    print(f"\n🎙️ 2단계: Faster-Whisper AI 엔진 구동 ({model_size}) - 안전 분할 전사 시작...")
     if not os.path.exists(audio_path):
         print("❌ 분석할 오디오 파일이 존재하지 않습니다.")
+        return ""
+
+    if not os.path.exists(FFMPEG_PATH):
+        ffmpeg_bin = "ffmpeg"
+    else:
+        ffmpeg_bin = FFMPEG_PATH
+
+    chunk_length_sec = 3600
+    audio_dir = os.path.dirname(audio_path)
+    chunk_pattern = os.path.join(audio_dir, "temp_chunk_%03d.mp3")
+    
+    for f in glob.glob(os.path.join(audio_dir, "temp_chunk_*.mp3")):
+        try: os.remove(f)
+        except: pass
+
+    print("✂️ [가속 필터] 대용량 오디오 연산 폭발 방지를 위해 60분 단위 안전 청크로 분할 중...")
+    cmd_split = [
+        ffmpeg_bin, '-y', '-i', audio_path,
+        '-f', 'segment', '-segment_time', str(chunk_length_sec),
+        '-c', 'copy', chunk_pattern
+    ]
+    subprocess.run(cmd_split, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    chunk_files = sorted(glob.glob(os.path.join(audio_dir, "temp_chunk_*.mp3")))
+    if not chunk_files:
+        print("❌ 오디오 청크 분할 과정에 실패했습니다.")
         return ""
 
     try:
         from faster_whisper import WhisperModel
         try:
             model = WhisperModel(model_size, device="cuda", compute_type="float16")
-            print("🚀 [GPU 가속 성공] NVIDIA CUDA 백엔드로 전체 STT 연산을 시작합니다.")
+            print("🚀 [GPU 가속 성공] NVIDIA CUDA 백엔드로 순차 STT 연산을 시작합니다.")
         except Exception as gpu_error:
             print(f"⚠️ GPU 로드 실패 ({gpu_error}). CPU 모드로 전환합니다.")
             model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            print("🐌 [CPU 전환 완료] CPU 환경에서 전체 대본 추출을 진행합니다.")
+            print("🐌 [CPU 전환 완료] CPU 환경에서 순차 대본 추출을 진행합니다.")
             
     except ImportError:
         print("❌ faster-whisper 라이브러리가 설치되어 있지 않습니다.")
         return ""
 
-    segments, info = model.transcribe(
-        audio_path,
-        language="ko",
-        beam_size=5,
-        word_timestamps=False,
-        repetition_penalty=1.4,
-        compression_ratio_threshold=1.8,
-        condition_on_previous_text=False
-    )
-    
     script_lines = []
-    for segment in segments:
-        absolute_secs = int(segment.start)
-        h = absolute_secs // 3600
-        m = (absolute_secs % 3600) // 60
-        s = absolute_secs % 60
+    
+    for idx, chunk_file in enumerate(chunk_files):
+        current_offset_secs = idx * chunk_length_sec
+        print(f"⏳ [STT 진행 중] {idx + 1}/{len(chunk_files)} 세그먼트 구간 연산 중...")
         
-        timestamp_str = f"[{h:02d}:{m:02d}:{s:02d}]"
-        text_content = segment.text.strip()
+        segments, info = model.transcribe(
+            chunk_file,
+            language="ko",
+            beam_size=5,
+            word_timestamps=False,
+            repetition_penalty=1.4,
+            compression_ratio_threshold=1.8,
+            condition_on_previous_text=False
+        )
         
-        if text_content:
-            script_lines.append(f"{timestamp_str} {text_content}")
-            print(f"  {timestamp_str} {text_content}")
+        for segment in segments:
+            absolute_secs = int(segment.start) + current_offset_secs
+            h = absolute_secs // 3600
+            m = (absolute_secs % 3600) // 60
+            s = absolute_secs % 60
+            
+            timestamp_str = f"[{h:02d}:{m:02d}:{s:02d}]"
+            text_content = segment.text.strip()
+            
+            if text_content:
+                script_lines.append(f"{timestamp_str} {text_content}")
+                print(f"  {timestamp_str} {text_content}")
+
+    for chunk_file in chunk_files:
+        try: os.remove(chunk_file)
+        except: pass
 
     raw_script = "\n".join(script_lines)
     
