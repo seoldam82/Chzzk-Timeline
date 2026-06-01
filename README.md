@@ -213,6 +213,8 @@ CLI 인터페이스 및 전체 실행 흐름 담당
 
 # 🛠️ 설치 방법
 
+## .bat에 있는 Chzzk-Timeline-Manager.zip 설치하셔도 됩니다.
+
 ## Python 설치
 
 * Python 3.10 이상 권장
